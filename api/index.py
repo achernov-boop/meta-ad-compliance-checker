@@ -20,6 +20,28 @@ def get_api_key():
     return os.environ.get("ANTHROPIC_API_KEY", "")
 
 
+@app.route("/api/debug")
+def debug():
+    key = get_api_key()
+    has_key = bool(key)
+    prefix = key[:12] + "..." if key else "(empty)"
+
+    # Test raw HTTPS connectivity
+    import urllib.request
+    try:
+        r = urllib.request.urlopen("https://api.anthropic.com", timeout=5)
+        connectivity = f"OK ({r.status})"
+    except Exception as e:
+        connectivity = f"FAIL: {type(e).__name__}: {e}"
+
+    return jsonify({
+        "has_key": has_key,
+        "key_prefix": prefix,
+        "anthropic_connectivity": connectivity,
+        "python_version": os.sys.version,
+    })
+
+
 PLATFORM_CONTEXT = {
     "feed": (
         "This ad is intended for Meta Feed placement (Facebook/Instagram Feed).\n"
