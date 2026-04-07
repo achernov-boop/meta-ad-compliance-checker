@@ -31,12 +31,17 @@ def debug():
     if has_key:
         try:
             import httpx
-            http_client = httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0))
+            http_client = httpx.Client(
+                timeout=httpx.Timeout(30.0, connect=10.0),
+                http1=True,
+                http2=False,
+            )
             c = anthropic.Anthropic(api_key=key, http_client=http_client)
             r = c.messages.create(model="claude-sonnet-4-6", max_tokens=5, messages=[{"role": "user", "content": "hi"}])
             sdk_test = f"OK: {r.content[0].text}"
         except Exception as e:
-            sdk_test = f"FAIL: {type(e).__name__}: {e}"
+            import traceback
+            sdk_test = f"FAIL: {type(e).__name__}: {e}\n{traceback.format_exc()}"
 
     return jsonify({
         "has_key": has_key,
@@ -342,7 +347,11 @@ def analyze():
     prompt = SYSTEM_PROMPT.replace("{platform_context}", PLATFORM_CONTEXT[platform])
 
     import httpx
-    http_client = httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0))
+    http_client = httpx.Client(
+        timeout=httpx.Timeout(120.0, connect=30.0),
+        http1=True,
+        http2=False,
+    )
     client = anthropic.Anthropic(
         api_key=get_api_key(),
         http_client=http_client,
