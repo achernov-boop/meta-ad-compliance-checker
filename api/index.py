@@ -17,7 +17,7 @@ def serve_index():
 
 
 def get_api_key():
-    return os.environ.get("ANTHROPIC_API_KEY", "")
+    return os.environ.get("ANTHROPIC_API_KEY", "").strip()
 
 
 @app.route("/api/debug")
