@@ -2,10 +2,18 @@ import os
 import base64
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from flask import Flask, request, jsonify, Response
 import anthropic
 
 app = Flask(__name__)
+
+INDEX_HTML = (Path(__file__).resolve().parent.parent / "public" / "index.html").read_text()
+
+
+@app.route("/")
+def serve_index():
+    return Response(INDEX_HTML, content_type="text/html")
 
 
 def get_api_key():
