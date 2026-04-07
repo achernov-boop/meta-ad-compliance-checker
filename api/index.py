@@ -8,7 +8,7 @@ import anthropic
 
 app = Flask(__name__)
 
-INDEX_HTML = (Path(__file__).resolve().parent.parent / "public" / "index.html").read_text()
+INDEX_HTML = (Path(__file__).resolve().parent / "index.html").read_text()
 
 
 @app.route("/")

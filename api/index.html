@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meta Ad Compliance Checker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0c;
+      --surface: #141418;
+      --surface2: #1c1c22;
+      --surface3: #242430;
+      --border: #2a2a36;
+      --border-light: #36364a;
+      --accent: #1877f2;
+      --accent-glow: rgba(24,119,242,0.25);
+      --accent-dim: rgba(24,119,242,0.10);
+      --text: #eeeef5;
+      --text-dim: #7e7e96;
+      --text-mid: #aaaabe;
+      --critical: #ff3b5c;
+      --critical-dim: rgba(255,59,92,0.10);
+      --high: #ff6b4d;
+      --high-dim: rgba(255,107,77,0.10);
+      --med: #f5a623;
+      --med-dim: rgba(245,166,35,0.10);
+      --low: #4cd964;
+      --low-dim: rgba(76,217,100,0.10);
+      --pass: #00e676;
+      --pass-dim: rgba(0,230,118,0.08);
+      --fail: #ff3b5c;
+      --fail-dim: rgba(255,59,92,0.08);
+      --review: #f5a623;
+      --review-dim: rgba(245,166,35,0.08);
+      --radius: 14px;
+      --radius-sm: 8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ==================== HEADER ==================== */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(20px);
+    }
+
+    .logo {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, #1877f2, #0d5bbf);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px; font-weight: 800; color: #fff;
+      box-shadow: 0 2px 12px rgba(24,119,242,0.3);
+    }
+
+    header h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+    .header-badge {
+      font-size: 11px; color: var(--text-dim);
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: 4px 10px; border-radius: 20px;
+    }
+
+    /* ==================== MAIN LAYOUT ==================== */
+    main {
+      flex: 1;
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 28px 24px;
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    @media (max-width: 860px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    /* ==================== PANELS ==================== */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ==================== PLATFORM SELECTOR ==================== */
+    .platform-selector {
+      display: flex; gap: 6px; padding: 14px 18px;
+    }
+    .platform-btn {
+      flex: 1;
+      padding: 8px 4px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .platform-btn:hover { border-color: var(--text-dim); color: var(--text-mid); }
+    .platform-btn.active {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ==================== UPLOAD ZONE ==================== */
+    .upload-zone {
+      margin: 16px;
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 36px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+    }
+    .upload-icon { font-size: 36px; margin-bottom: 10px; opacity: 0.8; }
+    .upload-zone p { color: var(--text-dim); font-size: 13px; line-height: 1.6; }
+    .upload-zone strong { color: var(--text); }
+
+    #fileInput { display: none; }
+
+    .preview-wrap { margin: 0 16px 14px; display: none; }
+    .preview-wrap.visible { display: block; }
+    .preview-img-wrap {
+      position: relative; border-radius: 10px; overflow: hidden;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .preview-img-wrap img {
+      width: 100%; display: block; max-height: 340px; object-fit: contain;
+    }
+    .preview-meta {
+      margin-top: 8px; font-size: 11px; color: var(--text-dim);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .change-btn {
+      background: none; border: 1px solid var(--border); color: var(--text-dim);
+      font-size: 10px; padding: 3px 8px; border-radius: 4px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .change-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
+    .analyze-btn {
+      display: block; width: calc(100% - 32px); margin: 0 16px 16px;
+      padding: 13px; background: var(--accent); color: #fff; border: none;
+      border-radius: 10px; font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: all 0.2s; letter-spacing: 0.01em;
+    }
+    .analyze-btn:hover:not(:disabled) {
+      box-shadow: 0 4px 20px var(--accent-glow);
+      transform: translateY(-1px);
+    }
+    .analyze-btn:active:not(:disabled) { transform: translateY(0); }
+    .analyze-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ==================== HISTORY ==================== */
+    .history-panel { margin-top: 0; }
+    .history-list {
+      max-height: 180px; overflow-y: auto; padding: 8px;
+    }
+    .history-list::-webkit-scrollbar { width: 4px; }
+    .history-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .history-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 8px;
+      cursor: pointer; transition: background 0.15s;
+      font-size: 12px; color: var(--text-mid);
+    }
+    .history-item:hover { background: var(--surface2); }
+    .history-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .history-dot.PASS { background: var(--pass); }
+    .history-dot.FAIL { background: var(--fail); }
+    .history-dot.NEEDS_REVIEW { background: var(--review); }
+    .history-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .history-score { font-weight: 700; font-size: 11px; font-family: "SF Mono", monospace; }
+    .history-empty {
+      padding: 20px; text-align: center; font-size: 12px; color: var(--text-dim);
+    }
+
+    /* ==================== RESULTS ==================== */
+    .results-column { display: flex; flex-direction: column; gap: 16px; }
+
+    /* --- Score Card --- */
+    .score-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      display: none;
+      gap: 24px;
+      align-items: center;
+    }
+    .score-card.visible { display: flex; }
+
+    .score-ring-wrap { position: relative; width: 110px; height: 110px; flex-shrink: 0; }
+    .score-ring { transform: rotate(-90deg); }
+    .score-ring-bg { fill: none; stroke: var(--surface3); stroke-width: 8; }
+    .score-ring-fg {
+      fill: none; stroke-width: 8; stroke-linecap: round;
+      transition: stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1), stroke 0.5s;
+    }
+    .score-number {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      font-size: 30px; font-weight: 800; letter-spacing: -0.02em;
+    }
+    .score-label {
+      position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-dim);
+    }
+
+    .score-details { flex: 1; min-width: 0; }
+    .score-status {
+      font-size: 22px; font-weight: 800; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .score-status-icon { font-size: 22px; }
+    .score-summary { font-size: 13px; color: var(--text-mid); line-height: 1.6; }
+
+    .score-meta-row {
+      display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;
+    }
+    .score-meta-chip {
+      font-size: 10px; font-weight: 600; padding: 4px 10px;
+      border-radius: 20px; border: 1px solid var(--border);
+      color: var(--text-mid); background: var(--surface2);
+    }
+    .score-meta-chip.risk-LOW { color: var(--low); border-color: var(--low); background: var(--low-dim); }
+    .score-meta-chip.risk-MEDIUM { color: var(--med); border-color: var(--med); background: var(--med-dim); }
+    .score-meta-chip.risk-HIGH { color: var(--high); border-color: var(--high); background: var(--high-dim); }
+    .score-meta-chip.risk-CRITICAL { color: var(--critical); border-color: var(--critical); background: var(--critical-dim); }
+
+    /* --- Export Bar --- */
+    .export-bar {
+      display: none; gap: 8px;
+    }
+    .export-bar.visible { display: flex; }
+    .export-btn {
+      flex: 1; padding: 10px; border-radius: 8px;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text-mid); transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .export-btn:hover { background: var(--surface2); border-color: var(--text-dim); color: var(--text); }
+
+    /* --- Issues --- */
+    .issues-section { display: flex; flex-direction: column; gap: 10px; }
+    .issues-header {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 16px;
+      display: flex; align-items: center;
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--text-dim);
+    }
+    .count-badge {
+      margin-left: auto; font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 20px; color: #fff;
+    }
+    .count-badge.issues { background: var(--fail); }
+    .count-badge.ok { background: var(--pass); }
+
+    .issue-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .issue-card:hover { border-color: var(--border-light); }
+
+    .issue-top {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+      cursor: pointer; user-select: none;
+    }
+
+    .severity-pill {
+      font-size: 9px; font-weight: 800; padding: 3px 8px;
+      border-radius: 20px; text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .severity-pill.CRITICAL { background: var(--critical-dim); color: var(--critical); }
+    .severity-pill.HIGH { background: var(--high-dim); color: var(--high); }
+    .severity-pill.MEDIUM { background: var(--med-dim); color: var(--med); }
+    .severity-pill.LOW { background: var(--low-dim); color: var(--low); }
+
+    .issue-category { font-size: 13px; font-weight: 600; flex: 1; }
+    .issue-toggle {
+      font-size: 14px; color: var(--text-dim);
+      transition: transform 0.3s; display: inline-block;
+    }
+    .issue-toggle.open { transform: rotate(180deg); }
+
+    .issue-body {
+      padding: 0 16px; max-height: 0; overflow: hidden;
+      transition: max-height 0.35s ease, padding 0.35s ease;
+    }
+    .issue-body.open { max-height: 600px; padding: 14px 16px; }
+
+    .issue-row { margin-bottom: 12px; }
+    .issue-row:last-child { margin-bottom: 0; }
+    .issue-label {
+      display: block; font-size: 9px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-dim); margin-bottom: 5px;
+    }
+
+    .flagged-copy {
+      font-family: "SF Mono", "Fira Code", Menlo, monospace;
+      font-size: 12px; background: var(--critical-dim);
+      border-left: 3px solid var(--critical);
+      padding: 8px 10px; border-radius: 4px; color: var(--text);
+      line-height: 1.5;
+    }
+    .reason-text { font-size: 12px; color: var(--text-mid); line-height: 1.6; }
+    .policy-ref { font-size: 11px; color: var(--text-dim); font-style: italic; margin-top: 4px; }
+
+    .fix-box {
+      background: var(--low-dim); border-left: 3px solid var(--low);
+      padding: 10px 12px; border-radius: 4px;
+      font-size: 12px; line-height: 1.5; color: var(--text);
+      display: flex; gap: 10px; align-items: flex-start;
+      position: relative;
+    }
+    .fix-icon { color: var(--low); font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .fix-text { flex: 1; }
+    .copy-fix-btn {
+      position: absolute; top: 6px; right: 6px;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text-dim); font-size: 10px; padding: 3px 7px;
+      border-radius: 4px; cursor: pointer; opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .fix-box:hover .copy-fix-btn { opacity: 1; }
+    .copy-fix-btn:hover { color: var(--text); border-color: var(--text-dim); }
+    .copy-fix-btn.copied { color: var(--pass); border-color: var(--pass); }
+
+    /* --- Recommendations --- */
+    .recs-list { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .rec-item {
+      font-size: 12px; color: var(--text-mid); line-height: 1.5;
+      display: flex; gap: 8px; align-items: flex-start;
+    }
+    .rec-bullet { color: var(--accent); flex-shrink: 0; font-size: 14px; }
+
+    /* --- Text Detected --- */
+    .text-tags { padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .text-tag {
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: 4px 10px; border-radius: 20px;
+      font-size: 11px; color: var(--text-dim);
+    }
+
+    /* --- Compliant --- */
+    .compliant-list { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+    .compliant-item {
+      font-size: 12px; color: var(--text-dim);
+      display: flex; gap: 8px; align-items: flex-start;
+    }
+    .compliant-check { color: var(--low); flex-shrink: 0; }
+
+    /* ==================== STATES ==================== */
+    .empty-state {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 60px 24px; text-align: center;
+    }
+    .empty-icon { font-size: 44px; margin-bottom: 14px; opacity: 0.7; }
+    .empty-state h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+    .empty-state p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+    .skeleton {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px; display: none;
+    }
+    .skeleton.visible { display: block; }
+    .sk-line {
+      height: 10px; background: var(--border); border-radius: 4px;
+      margin-bottom: 12px; animation: shimmer 1.4s infinite;
+    }
+    .sk-line:last-child { margin-bottom: 0; }
+    .sk-line.short { width: 55%; }
+    .sk-line.med { width: 75%; }
+
+    @keyframes shimmer {
+      0% { opacity: 0.3; }
+      50% { opacity: 0.7; }
+      100% { opacity: 0.3; }
+    }
+
+    .analyzing-msg {
+      display: none; text-align: center; padding: 12px;
+      font-size: 12px; color: var(--text-dim);
+    }
+    .analyzing-msg.visible { display: block; }
+
+    .error-box {
+      background: var(--fail-dim); border: 1px solid var(--fail);
+      color: var(--fail); border-radius: var(--radius);
+      padding: 14px 18px; font-size: 13px; display: none;
+    }
+    .error-box.visible { display: block; }
+
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.25);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle; margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Fade-in animation */
+    .fade-in { animation: fadeIn 0.4s ease forwards; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* No-issues celebration */
+    .no-issues-msg {
+      text-align: center; padding: 24px;
+      font-size: 14px; color: var(--pass);
+    }
+    .no-issues-icon { font-size: 32px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">M</div>
+  <h1>Meta Ad Compliance Checker</h1>
+  <div class="header-right">
+    <span class="header-badge">Powered by Claude</span>
+  </div>
+</header>
+
+<main>
+  <!-- =============== LEFT COLUMN =============== -->
+  <div style="display:flex;flex-direction:column;gap:14px;">
+
+    <!-- Upload Panel -->
+    <div class="panel">
+      <div class="panel-header">Upload Ad Creative</div>
+
+      <!-- Platform Selector -->
+      <div class="platform-selector">
+        <button class="platform-btn active" data-platform="all">All</button>
+        <button class="platform-btn" data-platform="feed">Feed</button>
+        <button class="platform-btn" data-platform="stories">Stories</button>
+        <button class="platform-btn" data-platform="reels">Reels</button>
+      </div>
+
+      <div class="upload-zone" id="uploadZone">
+        <div class="upload-icon">&#128444;&#65039;</div>
+        <p><strong>Drop your ad image here</strong><br>or click to browse</p>
+        <p style="margin-top:6px;font-size:11px;">PNG, JPG, WEBP &middot; Max 20 MB</p>
+      </div>
+
+      <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" />
+
+      <div class="preview-wrap" id="previewWrap">
+        <div class="preview-img-wrap">
+          <img id="previewImg" src="" alt="Ad preview" />
+        </div>
+        <div class="preview-meta">
+          <span id="previewName"></span>
+          <button class="change-btn" id="changeBtn">Change</button>
+        </div>
+      </div>
+
+      <button class="analyze-btn" id="analyzeBtn" disabled>
+        Run Compliance Audit
+      </button>
+    </div>
+
+    <!-- History Panel -->
+    <div class="panel history-panel">
+      <div class="panel-header">
+        Recent Audits
+        <span style="margin-left:auto;font-size:10px;color:var(--text-dim);cursor:pointer;" id="clearHistory">Clear</span>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="history-empty" id="historyEmpty">No audits yet</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- =============== RIGHT COLUMN =============== -->
+  <div class="results-column" id="resultsColumn">
+
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">&#128203;</div>
+      <h3>Ready to Audit</h3>
+      <p>Upload a static ad image to run a comprehensive<br>compliance check against Meta's Advertising Standards.</p>
+    </div>
+
+    <div class="skeleton" id="skeleton">
+      <div class="sk-line med"></div>
+      <div class="sk-line short"></div>
+      <div class="sk-line"></div>
+      <div class="sk-line med"></div>
+      <div class="sk-line short"></div>
+    </div>
+    <div class="analyzing-msg" id="analyzingMsg">
+      Analyzing ad against Meta's complete Advertising Standards&hellip;<br>
+      <span style="font-size:11px;color:var(--text-dim);">This usually takes 10-20 seconds</span>
+    </div>
+
+    <div class="error-box" id="errorBox"></div>
+
+    <!-- Score Card -->
+    <div class="score-card" id="scoreCard">
+      <div class="score-ring-wrap">
+        <svg class="score-ring" viewBox="0 0 120 120" width="110" height="110">
+          <circle class="score-ring-bg" cx="60" cy="60" r="50"></circle>
+          <circle class="score-ring-fg" id="scoreRingFg" cx="60" cy="60" r="50"
+            stroke-dasharray="314.16" stroke-dashoffset="314.16"></circle>
+        </svg>
+        <div class="score-number" id="scoreNumber">--</div>
+      </div>
+      <div class="score-details">
+        <div class="score-status">
+          <span class="score-status-icon" id="scoreIcon"></span>
+          <span id="scoreLabel"></span>
+        </div>
+        <div class="score-summary" id="scoreSummary"></div>
+        <div class="score-meta-row" id="scoreMetaRow"></div>
+      </div>
+    </div>
+
+    <!-- Export Bar -->
+    <div class="export-bar" id="exportBar">
+      <button class="export-btn" id="exportTxtBtn">&#128196; Download Report</button>
+      <button class="export-btn" id="copyJsonBtn">&#128203; Copy JSON</button>
+    </div>
+
+    <!-- Issues -->
+    <div class="issues-section" id="issuesSection" style="display:none;"></div>
+
+    <!-- Recommendations -->
+    <div class="panel" id="recsPanel" style="display:none;">
+      <div class="panel-header">Recommendations</div>
+      <div class="recs-list" id="recsList"></div>
+    </div>
+
+    <!-- Text Detected -->
+    <div class="panel" id="textPanel" style="display:none;">
+      <div class="panel-header">Text Detected in Ad</div>
+      <div class="text-tags" id="textTags"></div>
+    </div>
+
+    <!-- Compliant Elements -->
+    <div class="panel" id="compliantPanel" style="display:none;">
+      <div class="panel-header">
+        Compliant Elements
+        <span class="count-badge ok" id="compliantCount" style="margin-left:auto;"></span>
+      </div>
+      <div class="compliant-list" id="compliantList"></div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+// ==================================================================
+// PLATFORM SELECTOR
+// ==================================================================
+let selectedPlatform = "all";
+document.querySelectorAll(".platform-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".platform-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedPlatform = btn.dataset.platform;
+  });
+});
+
+// ==================================================================
+// FILE UPLOAD
+// ==================================================================
+const uploadZone  = document.getElementById("uploadZone");
+const fileInput   = document.getElementById("fileInput");
+const previewWrap = document.getElementById("previewWrap");
+const previewImg  = document.getElementById("previewImg");
+const previewName = document.getElementById("previewName");
+const changeBtn   = document.getElementById("changeBtn");
+const analyzeBtn  = document.getElementById("analyzeBtn");
+
+let selectedFile = null;
+
+uploadZone.addEventListener("dragover", e => { e.preventDefault(); uploadZone.classList.add("drag-over"); });
+uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("drag-over"));
+uploadZone.addEventListener("drop", e => {
+  e.preventDefault();
+  uploadZone.classList.remove("drag-over");
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith("image/")) setFile(f);
+});
+uploadZone.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+changeBtn.addEventListener("click", () => { fileInput.value = ""; fileInput.click(); });
+
+function setFile(f) {
+  selectedFile = f;
+  previewImg.src = URL.createObjectURL(f);
+  previewName.textContent = f.name + " (" + (f.size / 1024).toFixed(0) + " KB)";
+  uploadZone.style.display = "none";
+  previewWrap.classList.add("visible");
+  analyzeBtn.disabled = false;
+  resetResults();
+}
+
+// ==================================================================
+// RESULTS STATE
+// ==================================================================
+const emptyState     = document.getElementById("emptyState");
+const skeleton       = document.getElementById("skeleton");
+const analyzingMsg   = document.getElementById("analyzingMsg");
+const errorBox       = document.getElementById("errorBox");
+const scoreCard      = document.getElementById("scoreCard");
+const exportBar      = document.getElementById("exportBar");
+const issuesSection  = document.getElementById("issuesSection");
+const recsPanel      = document.getElementById("recsPanel");
+const textPanel      = document.getElementById("textPanel");
+const compliantPanel = document.getElementById("compliantPanel");
+
+let lastResult = null;
+
+function resetResults() {
+  emptyState.style.display = "";
+  skeleton.classList.remove("visible");
+  analyzingMsg.classList.remove("visible");
+  errorBox.classList.remove("visible");
+  scoreCard.classList.remove("visible");
+  exportBar.classList.remove("visible");
+  issuesSection.style.display = "none";
+  recsPanel.style.display = "none";
+  textPanel.style.display = "none";
+  compliantPanel.style.display = "none";
+}
+
+// ==================================================================
+// ANALYZE
+// ==================================================================
+analyzeBtn.addEventListener("click", async () => {
+  if (!selectedFile) return;
+
+  emptyState.style.display = "none";
+  skeleton.classList.add("visible");
+  analyzingMsg.classList.add("visible");
+  errorBox.classList.remove("visible");
+  scoreCard.classList.remove("visible");
+  exportBar.classList.remove("visible");
+  issuesSection.style.display = "none";
+  recsPanel.style.display = "none";
+  textPanel.style.display = "none";
+  compliantPanel.style.display = "none";
+
+  analyzeBtn.disabled = true;
+  analyzeBtn.innerHTML = '<span class="spinner"></span>Auditing\u2026';
+
+  const form = new FormData();
+  form.append("image", selectedFile);
+  form.append("platform", selectedPlatform);
+
+  try {
+    const res  = await fetch("/api/analyze", { method: "POST", body: form });
+    const data = await res.json();
+    skeleton.classList.remove("visible");
+    analyzingMsg.classList.remove("visible");
+
+    if (data.error) {
+      errorBox.textContent = "Error: " + data.error;
+      errorBox.classList.add("visible");
+      return;
+    }
+
+    lastResult = data;
+    renderResults(data);
+    saveToHistory(data, selectedFile.name);
+
+  } catch (err) {
+    skeleton.classList.remove("visible");
+    analyzingMsg.classList.remove("visible");
+    errorBox.textContent = "Request failed: " + err.message;
+    errorBox.classList.add("visible");
+  } finally {
+    analyzeBtn.disabled = false;
+    analyzeBtn.innerHTML = "Run Compliance Audit";
+  }
+});
+
+// ==================================================================
+// RENDER RESULTS
+// ==================================================================
+function renderResults(data) {
+  // --- Score Ring ---
+  const score = data.compliance_score ?? 50;
+  const circumference = 314.16;
+  const offset = circumference - (score / 100) * circumference;
+  const fg = document.getElementById("scoreRingFg");
+  const scoreColor = score >= 90 ? "var(--pass)" : score >= 60 ? "var(--review)" : "var(--fail)";
+
+  fg.style.stroke = scoreColor;
+  // Force reflow for animation
+  fg.style.transition = "none";
+  fg.style.strokeDashoffset = circumference;
+  fg.getBoundingClientRect();
+  fg.style.transition = "stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1)";
+  fg.style.strokeDashoffset = offset;
+
+  const scoreNum = document.getElementById("scoreNumber");
+  scoreNum.style.color = scoreColor;
+  animateNumber(scoreNum, 0, score, 1000);
+
+  // Status
+  const statusMap = {
+    PASS:         { icon: "\u2705", label: "Compliant" },
+    NEEDS_REVIEW: { icon: "\u26a0\ufe0f", label: "Needs Review" },
+    FAIL:         { icon: "\ud83d\udeab", label: "Non-Compliant" },
+  };
+  const s = statusMap[data.overall_status] || statusMap.NEEDS_REVIEW;
+  document.getElementById("scoreIcon").textContent = s.icon;
+  document.getElementById("scoreLabel").textContent = s.label;
+  document.getElementById("scoreLabel").style.color = scoreColor;
+  document.getElementById("scoreSummary").textContent = data.summary || "";
+
+  // Meta chips
+  const metaRow = document.getElementById("scoreMetaRow");
+  metaRow.innerHTML = "";
+  if (data.risk_level) {
+    metaRow.innerHTML += `<span class="score-meta-chip risk-${data.risk_level}">${data.risk_level} Risk</span>`;
+  }
+  if (data.industry_detected) {
+    metaRow.innerHTML += `<span class="score-meta-chip">${esc(data.industry_detected)}</span>`;
+  }
+  if (data.special_ad_category && data.special_ad_category !== "NONE") {
+    metaRow.innerHTML += `<span class="score-meta-chip risk-HIGH">Special Category: ${esc(data.special_ad_category)}</span>`;
+  }
+  if (data.estimated_review_outcome) {
+    const outcomeLabel = data.estimated_review_outcome.replace(/_/g, " ");
+    metaRow.innerHTML += `<span class="score-meta-chip">${esc(outcomeLabel)}</span>`;
+  }
+  if (data._meta?.platform) {
+    metaRow.innerHTML += `<span class="score-meta-chip">${esc(data._meta.platform.toUpperCase())}</span>`;
+  }
+
+  scoreCard.classList.add("visible");
+  scoreCard.classList.add("fade-in");
+
+  // --- Export ---
+  exportBar.classList.add("visible");
+
+  // --- Issues ---
+  const issues = data.issues || [];
+  issuesSection.innerHTML = "";
+  issuesSection.style.display = "";
+
+  if (issues.length > 0) {
+    issuesSection.innerHTML = `<div class="issues-header">Issues Found <span class="count-badge issues">${issues.length}</span></div>`;
+
+    issues.forEach((issue, idx) => {
+      const card = document.createElement("div");
+      card.className = "issue-card fade-in";
+      card.style.animationDelay = (idx * 0.08) + "s";
+      card.innerHTML = `
+        <div class="issue-top" onclick="toggleIssue(this)">
+          <span class="severity-pill ${issue.severity}">${issue.severity}</span>
+          <span class="issue-category">${esc(issue.category)}</span>
+          <span class="issue-toggle">\u25bc</span>
+        </div>
+        <div class="issue-body${idx === 0 ? ' open' : ''}">
+          <div class="issue-row">
+            <span class="issue-label">Flagged Copy</span>
+            <div class="flagged-copy">&ldquo;${esc(issue.flagged_copy)}&rdquo;</div>
+          </div>
+          <div class="issue-row">
+            <span class="issue-label">Policy Violation</span>
+            <div class="reason-text">${esc(issue.policy_violation)}</div>
+            ${issue.meta_policy_ref ? `<div class="policy-ref">${esc(issue.meta_policy_ref)}</div>` : ""}
+          </div>
+          <div class="issue-row">
+            <span class="issue-label">Why It's a Problem</span>
+            <div class="reason-text">${esc(issue.reason)}</div>
+          </div>
+          <div class="issue-row">
+            <span class="issue-label">Suggested Fix</span>
+            <div class="fix-box">
+              <span class="fix-icon">\u270f\ufe0f</span>
+              <span class="fix-text">${esc(issue.suggested_fix)}</span>
+              <button class="copy-fix-btn" onclick="copyFix(this, '${escAttr(issue.suggested_fix)}')">Copy</button>
+            </div>
+          </div>
+        </div>
+      `;
+      issuesSection.appendChild(card);
+    });
+
+    // Auto-expand first issue
+    const firstToggle = issuesSection.querySelector(".issue-toggle");
+    if (firstToggle) firstToggle.classList.add("open");
+
+  } else {
+    issuesSection.innerHTML = `
+      <div class="issues-header">Issues Found <span class="count-badge ok">0</span></div>
+      <div class="no-issues-msg fade-in">
+        <div class="no-issues-icon">\ud83c\udf89</div>
+        No policy violations detected — this ad looks compliant!
+      </div>`;
+  }
+
+  // --- Recommendations ---
+  const recs = data.recommendations || [];
+  if (recs.length > 0) {
+    const recsList = document.getElementById("recsList");
+    recsList.innerHTML = recs.map(r =>
+      `<div class="rec-item"><span class="rec-bullet">\u25b8</span>${esc(r)}</div>`
+    ).join("");
+    recsPanel.style.display = "";
+    recsPanel.classList.add("fade-in");
+  }
+
+  // --- Platform Notes ---
+  if (data.platform_notes) {
+    const recs2 = document.getElementById("recsList");
+    recs2.innerHTML += `
+      <div class="rec-item" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+        <span class="rec-bullet" style="color:var(--med);">\u25b8</span>
+        <span><strong>Platform Note:</strong> ${esc(data.platform_notes)}</span>
+      </div>`;
+    recsPanel.style.display = "";
+  }
+
+  // --- Detected Text ---
+  const texts = data.text_detected || [];
+  if (texts.length > 0) {
+    document.getElementById("textTags").innerHTML = texts.map(t =>
+      `<span class="text-tag">${esc(t)}</span>`
+    ).join("");
+    textPanel.style.display = "";
+    textPanel.classList.add("fade-in");
+  }
+
+  // --- Compliant Elements ---
+  const compliant = data.compliant_elements || [];
+  if (compliant.length > 0) {
+    document.getElementById("compliantList").innerHTML = compliant.map(c =>
+      `<div class="compliant-item"><span class="compliant-check">\u2713</span>${esc(c)}</div>`
+    ).join("");
+    document.getElementById("compliantCount").textContent = compliant.length;
+    compliantPanel.style.display = "";
+    compliantPanel.classList.add("fade-in");
+  }
+}
+
+// ==================================================================
+// INTERACTIONS
+// ==================================================================
+function toggleIssue(el) {
+  const body = el.nextElementSibling;
+  const toggle = el.querySelector(".issue-toggle");
+  body.classList.toggle("open");
+  toggle.classList.toggle("open");
+}
+
+function copyFix(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = "Copied!";
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 1500);
+  });
+}
+
+function animateNumber(el, from, to, duration) {
+  const start = performance.now();
+  function tick(now) {
+    const elapsed = now - start;
+    const progress = Math.min(elapsed / duration, 1);
+    const ease = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(from + (to - from) * ease);
+    if (progress < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// ==================================================================
+// EXPORT
+// ==================================================================
+document.getElementById("exportTxtBtn").addEventListener("click", async () => {
+  if (!lastResult) return;
+  try {
+    const res = await fetch("/api/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(lastResult)
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "compliance-report.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert("Export failed: " + e.message);
+  }
+});
+
+document.getElementById("copyJsonBtn").addEventListener("click", () => {
+  if (!lastResult) return;
+  navigator.clipboard.writeText(JSON.stringify(lastResult, null, 2)).then(() => {
+    const btn = document.getElementById("copyJsonBtn");
+    btn.innerHTML = "\u2713 Copied!";
+    setTimeout(() => { btn.innerHTML = "&#128203; Copy JSON"; }, 1500);
+  });
+});
+
+// ==================================================================
+// HISTORY (localStorage)
+// ==================================================================
+const HISTORY_KEY = "meta_compliance_history";
+const historyList  = document.getElementById("historyList");
+const historyEmpty = document.getElementById("historyEmpty");
+
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function saveToHistory(data, filename) {
+  const history = getHistory();
+  history.unshift({
+    filename,
+    status: data.overall_status,
+    score: data.compliance_score,
+    issues: (data.issues || []).length,
+    time: new Date().toLocaleString(),
+    data
+  });
+  if (history.length > 20) history.length = 20;
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory() {
+  const history = getHistory();
+  if (history.length === 0) {
+    historyList.innerHTML = '<div class="history-empty">No audits yet</div>';
+    return;
+  }
+  historyList.innerHTML = history.map((h, i) => `
+    <div class="history-item" onclick="loadHistory(${i})">
+      <span class="history-dot ${h.status}"></span>
+      <span class="history-name">${esc(h.filename)}</span>
+      <span class="history-score" style="color:${h.score >= 90 ? 'var(--pass)' : h.score >= 60 ? 'var(--review)' : 'var(--fail)'}">
+        ${h.score}
+      </span>
+    </div>
+  `).join("");
+}
+
+function loadHistory(idx) {
+  const history = getHistory();
+  if (history[idx] && history[idx].data) {
+    lastResult = history[idx].data;
+    resetResults();
+    emptyState.style.display = "none";
+    renderResults(history[idx].data);
+  }
+}
+
+document.getElementById("clearHistory").addEventListener("click", () => {
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistory();
+});
+
+renderHistory();
+
+// ==================================================================
+// HELPERS
+// ==================================================================
+function esc(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escAttr(str) {
+  return String(str || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, " ");
+}
+</script>
+</body>
+</html>
