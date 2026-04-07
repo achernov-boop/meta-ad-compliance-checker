@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/**/*.py": {
+      "maxDuration": 120
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/(.*)", "destination": "/api/index" }

@@ -315,7 +315,10 @@ def analyze():
 
     prompt = SYSTEM_PROMPT.replace("{platform_context}", PLATFORM_CONTEXT[platform])
 
-    client = anthropic.Anthropic(api_key=get_api_key())
+    client = anthropic.Anthropic(
+        api_key=get_api_key(),
+        timeout=120.0,
+    )
 
     try:
         response = client.messages.create(
