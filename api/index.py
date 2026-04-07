@@ -26,18 +26,22 @@ def debug():
     has_key = bool(key)
     prefix = key[:12] + "..." if key else "(empty)"
 
-    # Test raw HTTPS connectivity
-    import urllib.request
-    try:
-        r = urllib.request.urlopen("https://api.anthropic.com", timeout=5)
-        connectivity = f"OK ({r.status})"
-    except Exception as e:
-        connectivity = f"FAIL: {type(e).__name__}: {e}"
+    # Test Anthropic SDK directly
+    sdk_test = "not tested"
+    if has_key:
+        try:
+            import httpx
+            http_client = httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0))
+            c = anthropic.Anthropic(api_key=key, http_client=http_client)
+            r = c.messages.create(model="claude-sonnet-4-6", max_tokens=5, messages=[{"role": "user", "content": "hi"}])
+            sdk_test = f"OK: {r.content[0].text}"
+        except Exception as e:
+            sdk_test = f"FAIL: {type(e).__name__}: {e}"
 
     return jsonify({
         "has_key": has_key,
         "key_prefix": prefix,
-        "anthropic_connectivity": connectivity,
+        "sdk_test": sdk_test,
         "python_version": os.sys.version,
     })
 
@@ -337,9 +341,11 @@ def analyze():
 
     prompt = SYSTEM_PROMPT.replace("{platform_context}", PLATFORM_CONTEXT[platform])
 
+    import httpx
+    http_client = httpx.Client(timeout=httpx.Timeout(120.0, connect=30.0))
     client = anthropic.Anthropic(
         api_key=get_api_key(),
-        timeout=120.0,
+        http_client=http_client,
     )
 
     try:
