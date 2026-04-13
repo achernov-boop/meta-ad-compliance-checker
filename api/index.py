@@ -1,6 +1,8 @@
 import os
 import base64
 import json
+import time
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from flask import Flask, request, jsonify, Response
@@ -18,6 +20,10 @@ def serve_index():
 
 def get_api_key():
     return os.environ.get("ANTHROPIC_API_KEY", "").strip()
+
+
+def get_gemini_key():
+    return os.environ.get("GEMINI_API_KEY", "").strip()
 
 
 @app.route("/api/debug")
@@ -82,10 +88,14 @@ PLATFORM_CONTEXT = {
     ),
 }
 
-SYSTEM_PROMPT = """You are a senior Meta Advertising Policy compliance analyst with deep expertise in digital advertising regulations, Meta's Advertising Standards, and platform-specific creative requirements. Your role is to perform comprehensive compliance audits on static ad creatives.
+SYSTEM_PROMPT = """You are a senior Meta Advertising Policy compliance analyst with deep expertise in digital advertising regulations, Meta's Advertising Standards, and platform-specific creative requirements. Your role is to perform comprehensive compliance audits on ad creatives.
+
+**Policy reference snapshot:** Meta Advertising Standards as of 2026-04-13.
+Primary source: https://transparency.meta.com/policies/ad-standards/
+Meta now performs multimodal review — simultaneous analysis of text, image, video, audio, and landing pages — so compliance must hold across every modality present.
 
 ## ANALYSIS SCOPE
-Examine EVERY piece of visible text: headlines, body copy, CTAs, disclaimers, fine print, watermarks, brand names, taglines, URLs, phone numbers, pricing, offer terms, and any other textual elements — no matter how small.
+Examine EVERY piece of visible text AND (for video) every spoken claim, voiceover line, on-screen caption, and audio element: headlines, body copy, CTAs, disclaimers, fine print, watermarks, brand names, taglines, URLs, phone numbers, pricing, offer terms, and any other textual elements — no matter how small or how briefly they appear.
 
 ## META ADVERTISING POLICIES — COMPLETE REFERENCE
 
@@ -141,17 +151,22 @@ Examine EVERY piece of visible text: headlines, body copy, CTAs, disclaimers, fi
 
 ### 2. RESTRICTED CONTENT (Requires Compliance Measures)
 
-**2a. Health & Wellness**
-- NO before/after transformation images or claims
+**2a. Health & Wellness (stricter 2026 rules — most heavily regulated category)**
+- NO before/after transformation images or claims. The ban now extends to **implied transformations** (silhouettes, "visualize your future self", split-screen with arrow, etc.)
 - NO guaranteed health outcomes ("cure", "eliminate", "reverse", "heal")
 - NO specific result promises ("lose 20 lbs in 2 weeks", "gain 3 inches")
 - NO claims implying medical diagnosis ("Do you suffer from…?", "If you have [condition]…")
+- **NO content designed to generate negative self-perception** to promote diet, weight loss, or health products (e.g., "Embarrassed by your body?", pinch-an-inch imagery, body-shaming voiceovers)
 - Supplements CANNOT make FDA-unapproved health claims
-- Weight loss ads CANNOT contain unrealistic body expectations
-- NO promotion of unsafe dietary practices (extreme fasting, purging)
+- Weight loss ads (most-restricted tier in 2026):
+  - CANNOT reference specific weight loss amounts (no "-20 lbs", "-5 dress sizes")
+  - CANNOT use time-bound transformation claims ("Lose 10 lbs in 30 days", "30-day results")
+  - CANNOT target users under 18
+  - CANNOT show unrealistic body expectations
+- NO promotion of unsafe dietary practices (extreme fasting, purging, very-low-calorie plans without medical supervision)
 - Cosmetic procedures must not trivialize risks
 
-**2b. Financial Services & Products**
+**2b. Financial Services & Products (expanded verification 2026)**
 - NO guaranteed returns, earnings, or profits
 - MUST include appropriate risk disclaimers
 - CANNOT minimize investment risk
@@ -159,6 +174,7 @@ Examine EVERY piece of visible text: headlines, body copy, CTAs, disclaimers, fi
 - Crypto/forex ads CANNOT guarantee profits or show misleading P&L screenshots
 - Credit products must disclose APR/terms where legally required
 - Insurance ads must not mislead about coverage
+- **Advertiser verification now mandatory in 38 countries** (up from 12 in 2024). Each market requires documentation specific to that country's financial regulator. Unverified advertisers see ads rejected regardless of creative quality.
 
 **2c. Alcohol**
 - Must comply with local laws and all applicable age restrictions
@@ -173,11 +189,17 @@ Examine EVERY piece of visible text: headlines, body copy, CTAs, disclaimers, fi
 - Cannot promise specific relationship outcomes
 - Cannot promote infidelity or deceptive relationship practices
 
-**2e. Cryptocurrency & Financial Trading**
-- Cannot guarantee profits or specific returns
-- Must include risk disclaimers
-- Cannot use misleading success stories or fake account screenshots
+**2e. Cryptocurrency & Financial Trading (March 2026: tiered authorization system)**
+Meta replaced the single authorization gate with tiers based on regulator status:
+- **Tier 1** (regulated exchanges/custodians with active licenses from FCA, SEC, MAS, BaFin, etc.): awareness, download, conversion campaigns allowed with fewer creative restrictions; risk disclaimers still required
+- **Tier 2** (unregulated or lightly regulated): heavily restricted, awareness-only in most markets
+- **Any tier** cannot:
+  - Guarantee profits or specific returns
+  - Use misleading success stories or fake P&L / account screenshots
+  - Promote celebrity endorsements without documented authorization
+  - Target minors or financially vulnerable audiences
 - DeFi/NFT ads must clearly explain what is being offered
+- Scam-pattern language ("Turn $100 into $10,000", "Secret trading signal", "My broker doesn't want you to see this") is now aggressively flagged following the H2 2025 surge in crypto scam complaints
 
 **2f. Gambling & Lotteries**
 - Must target only legal-age adults in permitted jurisdictions
@@ -191,10 +213,10 @@ Examine EVERY piece of visible text: headlines, body copy, CTAs, disclaimers, fi
 - Online pharmacies must be certified/verified
 - Cannot promote off-label drug use
 
-### 3. PERSONAL ATTRIBUTES POLICY (High Priority)
-Ads MUST NOT assert or imply personal attributes about the viewer. This is one of Meta's most strictly enforced policies.
+### 3. PERSONAL ATTRIBUTES POLICY (High Priority — Q1 2026 enforcement expanded)
+Ads MUST NOT assert or imply personal attributes about the viewer. This is one of Meta's most strictly enforced policies. In Q1 2026 Meta expanded automated detection to catch **indirect implications** and **conditional phrasing**, not just explicit statements.
 
-**Prohibited patterns:**
+**Prohibited patterns (direct):**
 - Direct assertion: "Are you overweight?", "As a diabetic…", "Struggling with debt?"
 - Implied knowledge: "We know you're looking for…", "People like you…"
 - Health targeting: "If you have [condition]…", "Suffering from [symptom]?"
@@ -203,10 +225,37 @@ Ads MUST NOT assert or imply personal attributes about the viewer. This is one o
 - Age targeting: "Over 50?", "Millennials know…", "For seniors…"
 - Relationship targeting: "Recently divorced?", "Single and ready…?"
 
+**Prohibited patterns (indirect — expanded detection 2026):**
+- Indirect implication: "For people dealing with financial challenges", "For those navigating heartbreak", "Designed for busy parents"
+- Conditional phrasing: "If you've been diagnosed with…", "When your business is failing…", "When the scale won't budge…"
+- Group address assuming membership: "For anyone who's ever felt invisible", "For those who've tried everything"
+
 **Compliant alternatives:**
 - Use general language: "Many people experience…" instead of "Do you experience…?"
 - Focus on the product: "Our solution helps with…" instead of "If you struggle with…"
 - Third person framing: "Customers report…" instead of "You will feel…"
+- Describe the product's purpose, not the viewer's state: "A tool for financial planning" instead of "For people in financial trouble"
+
+### 3b. AI-GENERATED CONTENT DISCLOSURE (NEW — 2026, mandatory globally)
+Meta mandates disclosure of AI-generated advertising content across Facebook and Instagram, following EU AI Act enforcement but applied worldwide. "Undisclosed AI content" is now the third-largest rejection category (~14% of all rejections).
+
+**Must be disclosed as AI-generated:**
+- AI-generated product images or renders
+- AI-generated backgrounds/scenes where the backdrop is the creative subject
+- Face or body modification beyond standard filters (not cosmetic color correction — actual generative modification)
+- Synthetic voiceovers (AI-generated narration of any length)
+- AI-created video content (fully generated or substantially composited)
+- AI-generated spokespeople, actors, or "synthetic performers"
+
+**Does NOT require disclosure:**
+- AI-assisted color correction, cropping, or exposure adjustment
+- Headline optimization / copy rewriting tools
+- Background removal (as long as the new background is a real photo)
+- Standard filters / beauty filters that are clearly cosmetic
+
+**Detection mechanism:** Meta scans for C2PA metadata from DALL-E, Midjourney, Stable Diffusion, Sora, and other generative tools AND performs visual artifact analysis. Manual disclosure is via a checkbox in Ads Manager — absence of disclosure on detectably-AI content triggers rejection.
+
+**For this analysis:** If the creative appears to contain AI-generated imagery/audio/video that would require disclosure under this policy, flag it as a HIGH severity issue under category "AI Content Disclosure" so the advertiser knows to check the Ads Manager disclosure flag.
 
 ### 4. SENSATIONAL & CLICKBAIT CONTENT
 - NO exaggerated/sensational language ("SHOCKING", "UNBELIEVABLE", "JAW-DROPPING", "INSANE")
@@ -316,19 +365,25 @@ Respond ONLY with valid JSON. No markdown code fences. No commentary before or a
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
+    platform = request.form.get("platform", "all")
+    if platform not in PLATFORM_CONTEXT:
+        platform = "all"
+
+    # Video path: client has uploaded to Vercel Blob and is sending a URL.
+    video_url = request.form.get("video_url", "").strip()
+    if video_url:
+        return analyze_video(video_url, request.form.get("mime_type", "").strip(), platform)
+
+    # Image path: existing Claude flow (unchanged).
     if not get_api_key():
         return jsonify({"error": "No API key configured. Set ANTHROPIC_API_KEY in your environment."}), 500
 
     if "image" not in request.files:
-        return jsonify({"error": "No image uploaded"}), 400
+        return jsonify({"error": "No image or video uploaded"}), 400
 
     file = request.files["image"]
     if file.filename == "":
         return jsonify({"error": "No file selected"}), 400
-
-    platform = request.form.get("platform", "all")
-    if platform not in PLATFORM_CONTEXT:
-        platform = "all"
 
     allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
     content_type = file.content_type or ""
@@ -401,6 +456,7 @@ def analyze():
             "analyzed_at": datetime.now(timezone.utc).isoformat(),
             "platform": platform,
             "model": "claude-sonnet-4-6",
+            "media_type": "image",
         }
 
         return jsonify(result)
@@ -411,6 +467,122 @@ def analyze():
         return jsonify({"error": "Invalid API key. Check the ANTHROPIC_API_KEY environment variable."}), 401
     except anthropic.APIError as e:
         return jsonify({"error": f"Claude API error: {e}"}), 500
+
+
+def analyze_video(video_url, mime_type, platform):
+    """Analyze a video ad via Gemini.
+
+    The client has already uploaded the video to Vercel Blob (bypassing the
+    4.5 MB serverless body limit). We fetch it from the Blob URL, hand it to
+    Gemini's File API, and reuse the same Meta-policy system prompt + JSON
+    schema as the image flow so the frontend renders identically.
+    """
+    if not get_gemini_key():
+        return jsonify({"error": "No Gemini API key configured. Set GEMINI_API_KEY in your environment."}), 500
+
+    if not video_url.startswith(("http://", "https://")):
+        return jsonify({"error": "video_url must be a full http(s) URL"}), 400
+
+    allowed_video_types = {
+        "video/mp4",
+        "video/quicktime",
+        "video/webm",
+        "video/x-matroska",
+    }
+    if mime_type and mime_type not in allowed_video_types:
+        return jsonify({"error": f"Unsupported video mime type: {mime_type}"}), 400
+    if not mime_type:
+        mime_type = "video/mp4"
+
+    from google import genai
+    from google.genai import types as genai_types
+    import httpx
+
+    # 1. Stream-download from Blob URL to a temp file. Function memory (1-3GB)
+    #    easily holds typical ad videos (<100MB); temp file avoids loading
+    #    everything into RAM for larger assets.
+    tmp_path = None
+    uploaded_name = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+            tmp_path = tmp.name
+            with httpx.stream("GET", video_url, timeout=60.0, follow_redirects=True) as r:
+                if r.status_code != 200:
+                    return jsonify({"error": f"Failed to fetch video from Blob: HTTP {r.status_code}"}), 502
+                for chunk in r.iter_bytes(chunk_size=1024 * 1024):
+                    tmp.write(chunk)
+
+        # 2. Upload to Gemini File API.
+        client = genai.Client(api_key=get_gemini_key())
+        uploaded = client.files.upload(
+            file=tmp_path,
+            config=genai_types.UploadFileConfig(mime_type=mime_type),
+        )
+        uploaded_name = uploaded.name
+
+        # 3. Poll until file is ACTIVE (Gemini transcodes/indexes the video).
+        deadline = time.time() + 120
+        while uploaded.state.name == "PROCESSING" and time.time() < deadline:
+            time.sleep(2)
+            uploaded = client.files.get(name=uploaded.name)
+        if uploaded.state.name != "ACTIVE":
+            return jsonify({"error": f"Gemini failed to process video (state={uploaded.state.name})"}), 502
+
+        # 4. Generate compliance analysis using the same Meta-policy prompt.
+        system_prompt = SYSTEM_PROMPT.replace("{platform_context}", PLATFORM_CONTEXT[platform])
+        user_instruction = (
+            f"Perform a full Meta advertising compliance audit on this VIDEO ad creative. "
+            f"Platform: {platform.upper()}. "
+            "Examine every visual frame AND audio (voiceover, music, sound effects). "
+            "Transcribe any spoken claims and evaluate them against Meta Advertising Standards. "
+            "Note any on-screen text that appears at any point during the video. "
+            "For `text_detected`, list every piece of visible on-screen text and every spoken claim. "
+            "Return your assessment as the specified JSON structure — no markdown fences, no extra text."
+        )
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[uploaded, user_instruction],
+            config=genai_types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                response_mime_type="application/json",
+                temperature=0.2,
+                max_output_tokens=8192,
+            ),
+        )
+
+        text = (response.text or "").strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            text = text.rsplit("```", 1)[0].strip()
+
+        result = json.loads(text)
+        result["_meta"] = {
+            "analyzed_at": datetime.now(timezone.utc).isoformat(),
+            "platform": platform,
+            "model": "gemini-2.5-flash",
+            "media_type": "video",
+        }
+        return jsonify(result)
+
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"Failed to parse Gemini response: {e}", "raw": text if 'text' in dir() else ""}), 500
+    except httpx.HTTPError as e:
+        return jsonify({"error": f"Failed to download video from Blob: {e}"}), 502
+    except Exception as e:
+        return jsonify({"error": f"Gemini API error: {type(e).__name__}: {e}"}), 500
+    finally:
+        # Best-effort cleanup of both local temp file and Gemini-hosted file.
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        if uploaded_name:
+            try:
+                client.files.delete(name=uploaded_name)
+            except Exception:
+                pass
 
 
 @app.route("/api/export", methods=["POST"])

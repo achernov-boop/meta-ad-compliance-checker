@@ -468,7 +468,7 @@
   <div class="logo">M</div>
   <h1>Meta Ad Compliance Checker</h1>
   <div class="header-right">
-    <span class="header-badge">Powered by Claude</span>
+    <span class="header-badge">Claude (images) &middot; Gemini (video)</span>
   </div>
 </header>
 
@@ -490,19 +490,26 @@
 
       <div class="upload-zone" id="uploadZone">
         <div class="upload-icon">&#128444;&#65039;</div>
-        <p><strong>Drop your ad image here</strong><br>or click to browse</p>
-        <p style="margin-top:6px;font-size:11px;">PNG, JPG, WEBP &middot; Max 20 MB</p>
+        <p><strong>Drop your ad image or video here</strong><br>or click to browse</p>
+        <p style="margin-top:6px;font-size:11px;">Image: PNG, JPG, WEBP &middot; Video: MP4, MOV, WEBM &middot; Max 200 MB</p>
       </div>
 
-      <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp" />
+      <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm,video/x-matroska" />
 
       <div class="preview-wrap" id="previewWrap">
         <div class="preview-img-wrap">
-          <img id="previewImg" src="" alt="Ad preview" />
+          <img id="previewImg" src="" alt="Ad preview" style="display:none;" />
+          <video id="previewVideo" src="" controls style="display:none;width:100%;max-height:340px;background:#000;"></video>
         </div>
         <div class="preview-meta">
           <span id="previewName"></span>
           <button class="change-btn" id="changeBtn">Change</button>
+        </div>
+        <div id="uploadProgress" style="display:none;margin-top:8px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;" id="uploadProgressLabel">Uploading video&hellip;</div>
+          <div style="height:4px;background:var(--surface3);border-radius:2px;overflow:hidden;">
+            <div id="uploadProgressBar" style="height:100%;width:0%;background:var(--accent);transition:width 0.2s;"></div>
+          </div>
         </div>
       </div>
 
@@ -530,7 +537,7 @@
     <div class="empty-state" id="emptyState">
       <div class="empty-icon">&#128203;</div>
       <h3>Ready to Audit</h3>
-      <p>Upload a static ad image to run a comprehensive<br>compliance check against Meta's Advertising Standards.</p>
+      <p>Upload an ad image or video to run a comprehensive<br>compliance check against Meta's Advertising Standards.</p>
     </div>
 
     <div class="skeleton" id="skeleton">
@@ -616,15 +623,20 @@ document.querySelectorAll(".platform-btn").forEach(btn => {
 // ==================================================================
 // FILE UPLOAD
 // ==================================================================
-const uploadZone  = document.getElementById("uploadZone");
-const fileInput   = document.getElementById("fileInput");
-const previewWrap = document.getElementById("previewWrap");
-const previewImg  = document.getElementById("previewImg");
-const previewName = document.getElementById("previewName");
-const changeBtn   = document.getElementById("changeBtn");
-const analyzeBtn  = document.getElementById("analyzeBtn");
+const uploadZone    = document.getElementById("uploadZone");
+const fileInput     = document.getElementById("fileInput");
+const previewWrap   = document.getElementById("previewWrap");
+const previewImg    = document.getElementById("previewImg");
+const previewVideo  = document.getElementById("previewVideo");
+const previewName   = document.getElementById("previewName");
+const changeBtn     = document.getElementById("changeBtn");
+const analyzeBtn    = document.getElementById("analyzeBtn");
 
 let selectedFile = null;
+let selectedKind = null; // "image" | "video"
+
+const SUPPORTED_IMAGE = /^image\/(png|jpeg|webp)$/;
+const SUPPORTED_VIDEO = /^video\/(mp4|quicktime|webm|x-matroska)$/;
 
 uploadZone.addEventListener("dragover", e => { e.preventDefault(); uploadZone.classList.add("drag-over"); });
 uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("drag-over"));
@@ -632,19 +644,48 @@ uploadZone.addEventListener("drop", e => {
   e.preventDefault();
   uploadZone.classList.remove("drag-over");
   const f = e.dataTransfer.files[0];
-  if (f && f.type.startsWith("image/")) setFile(f);
+  if (f) setFile(f);
 });
 uploadZone.addEventListener("click", () => fileInput.click());
 fileInput.addEventListener("change", () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
 changeBtn.addEventListener("click", () => { fileInput.value = ""; fileInput.click(); });
 
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
 function setFile(f) {
+  let kind = null;
+  if (SUPPORTED_IMAGE.test(f.type)) kind = "image";
+  else if (SUPPORTED_VIDEO.test(f.type)) kind = "video";
+  else {
+    alert("Unsupported file type. Use PNG/JPG/WEBP images or MP4/MOV/WEBM videos.");
+    return;
+  }
+
   selectedFile = f;
-  previewImg.src = URL.createObjectURL(f);
-  previewName.textContent = f.name + " (" + (f.size / 1024).toFixed(0) + " KB)";
+  selectedKind = kind;
+
+  const url = URL.createObjectURL(f);
+  if (kind === "image") {
+    previewImg.src = url;
+    previewImg.style.display = "";
+    previewVideo.style.display = "none";
+    previewVideo.removeAttribute("src");
+  } else {
+    previewVideo.src = url;
+    previewVideo.style.display = "";
+    previewImg.style.display = "none";
+    previewImg.removeAttribute("src");
+  }
+
+  previewName.textContent = f.name + " (" + formatSize(f.size) + ")";
   uploadZone.style.display = "none";
   previewWrap.classList.add("visible");
   analyzeBtn.disabled = false;
+  document.getElementById("uploadProgress").style.display = "none";
   resetResults();
 }
 
@@ -678,8 +719,95 @@ function resetResults() {
 }
 
 // ==================================================================
-// ANALYZE
+// VIDEO UPLOAD TO VERCEL BLOB
 // ==================================================================
+// Implements the Vercel Blob client-upload protocol directly with fetch,
+// bypassing the @vercel/blob/client CDN (which can fail silently due to
+// network, CSP, or cache issues). Two steps:
+//   1. POST to /api/blob-upload → get a signed clientToken
+//   2. PUT file to blob.vercel-storage.com with that token → get public URL
+async function uploadVideoToBlob(file) {
+  const progress = document.getElementById("uploadProgress");
+  const bar = document.getElementById("uploadProgressBar");
+  const label = document.getElementById("uploadProgressLabel");
+  progress.style.display = "";
+  bar.style.width = "0%";
+  label.textContent = "Requesting upload token\u2026";
+
+  // Random suffix so names don't collide.
+  const ext = (file.name.match(/\.[^.]+$/) || [""])[0];
+  const baseName = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const pathname = `${baseName}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}${ext}`;
+  const callbackUrl = new URL("/api/blob-upload", window.location.href).href;
+
+  console.log("[upload] requesting client token for", pathname);
+
+  // Step 1: handshake with our server to get a signed client token
+  const tokenRes = await fetch("/api/blob-upload", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      type: "blob.generate-client-token",
+      payload: {
+        pathname,
+        callbackUrl,
+        clientPayload: null,
+        multipart: false,
+      },
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    const errText = await tokenRes.text();
+    throw new Error(`Token request failed (${tokenRes.status}): ${errText}`);
+  }
+
+  const tokenJson = await tokenRes.json();
+  if (!tokenJson.clientToken) {
+    throw new Error(`Token response missing clientToken: ${JSON.stringify(tokenJson)}`);
+  }
+  console.log("[upload] got client token, uploading to blob storage");
+
+  // Step 2: upload file directly to Vercel Blob storage with progress tracking
+  // Using XHR instead of fetch because fetch doesn't expose upload progress.
+  label.textContent = "Uploading video\u2026 0%";
+
+  const blobUrl = await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", `https://blob.vercel-storage.com/${encodeURIComponent(pathname)}`);
+    xhr.setRequestHeader("authorization", `Bearer ${tokenJson.clientToken}`);
+    xhr.setRequestHeader("x-api-version", "7");
+    xhr.setRequestHeader("x-content-type", file.type || "application/octet-stream");
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        bar.style.width = pct + "%";
+        label.textContent = `Uploading video\u2026 ${pct}%`;
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          resolve(result);
+        } catch (e) {
+          reject(new Error(`Invalid blob response: ${xhr.responseText.slice(0, 200)}`));
+        }
+      } else {
+        reject(new Error(`Blob upload failed (${xhr.status}): ${xhr.responseText.slice(0, 500)}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Network error uploading to Vercel Blob"));
+    xhr.send(file);
+  });
+
+  console.log("[upload] blob upload complete", blobUrl);
+  label.textContent = "Upload complete";
+  return blobUrl; // { url, pathname, contentType, contentDisposition }
+}
+
 analyzeBtn.addEventListener("click", async () => {
   if (!selectedFile) return;
 
@@ -695,17 +823,30 @@ analyzeBtn.addEventListener("click", async () => {
   compliantPanel.style.display = "none";
 
   analyzeBtn.disabled = true;
-  analyzeBtn.innerHTML = '<span class="spinner"></span>Auditing\u2026';
-
-  const form = new FormData();
-  form.append("image", selectedFile);
-  form.append("platform", selectedPlatform);
 
   try {
+    const form = new FormData();
+    form.append("platform", selectedPlatform);
+
+    if (selectedKind === "video") {
+      analyzeBtn.innerHTML = '<span class="spinner"></span>Uploading\u2026';
+      analyzingMsg.innerHTML = "Uploading video to secure storage&hellip;<br><span style=\"font-size:11px;color:var(--text-dim);\">Large videos may take a moment</span>";
+      const blob = await uploadVideoToBlob(selectedFile);
+      form.append("video_url", blob.url);
+      form.append("mime_type", selectedFile.type);
+      analyzeBtn.innerHTML = '<span class="spinner"></span>Auditing video\u2026';
+      analyzingMsg.innerHTML = "Analyzing video against Meta's Advertising Standards&hellip;<br><span style=\"font-size:11px;color:var(--text-dim);\">Gemini processes frames + audio — this may take 20-60 seconds</span>";
+    } else {
+      form.append("image", selectedFile);
+      analyzeBtn.innerHTML = '<span class="spinner"></span>Auditing\u2026';
+      analyzingMsg.innerHTML = "Analyzing ad against Meta's complete Advertising Standards&hellip;<br><span style=\"font-size:11px;color:var(--text-dim);\">This usually takes 10-20 seconds</span>";
+    }
+
     const res  = await fetch("/api/analyze", { method: "POST", body: form });
     const data = await res.json();
     skeleton.classList.remove("visible");
     analyzingMsg.classList.remove("visible");
+    document.getElementById("uploadProgress").style.display = "none";
 
     if (data.error) {
       errorBox.textContent = "Error: " + data.error;
@@ -720,6 +861,7 @@ analyzeBtn.addEventListener("click", async () => {
   } catch (err) {
     skeleton.classList.remove("visible");
     analyzingMsg.classList.remove("visible");
+    document.getElementById("uploadProgress").style.display = "none";
     errorBox.textContent = "Request failed: " + err.message;
     errorBox.classList.add("visible");
   } finally {

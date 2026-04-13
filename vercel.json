@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/blob-upload", "destination": "/api/blob-upload" },
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/(.*)", "destination": "/api/index" }
   ]
