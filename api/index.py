@@ -472,23 +472,52 @@ Respond ONLY with valid JSON. No markdown code fences. No commentary before or a
   "estimated_review_outcome": "<LIKELY_APPROVED | MANUAL_REVIEW_PROBABLE | LIKELY_REJECTED>"
 }}
 
+## SEVERITY CALIBRATION — reflect actual rejection probability, NOT theoretical policy coverage
+
+Assign severity based on what Meta's review would realistically do, not every possible concern:
+
+- **CRITICAL** — Near-certain automated rejection. Reserve for: prohibited categories (drugs, weapons, adult, tobacco, discrimination), direct personal attribute assertions ("Are you overweight?", "Husbands, buy this"), unambiguous misleading claims (fake play buttons, fabricated testimonials), undisclosed AI content that is clearly AI-generated.
+- **HIGH** — Likely to trigger manual review and often rejected, but not guaranteed. Examples: subtle personal attribute implications ("your wife/husband"), guaranteed health outcomes, guaranteed financial returns.
+- **MEDIUM** — Concerns worth addressing that may reduce delivery or occasionally get flagged. Examples: comparative claims without visible substantiation, mild superlatives ("the best"), urgency language where inventory context is ambiguous.
+- **LOW** — Polish notes that rarely block approval on their own. Examples: minor grammar issues, heavy text overlay, stylistic suggestions, missing "results may vary" disclaimers on already-compliant claims.
+
+**Do NOT inflate severity.** Most real Meta rejections come from a small set of clear-cut triggers (prohibited content, personal attributes, misleading UI, restricted categories without authorization). Everything else is typically a soft-flag, delivery-reduction, or appealable issue.
+
+## COMMONLY-APPROVED PATTERNS — do not over-flag these
+
+The following patterns are industry-standard in running ads and should generally NOT be flagged as HIGH/CRITICAL unless paired with a specific red flag:
+
+- **Beauty/cosmetic claims:** "healthier-looking hair", "smoother skin", "reduces the appearance of…" — these are cosmetic, not medical.
+- **Speed/performance claims with implied testing:** "Dries hair in half the time", "5x faster" — medium severity at most; advertiser would add a testing disclaimer.
+- **Urgency/scarcity with real-looking context:** "Limited stocks", "Selling out fast" — assume genuine unless you see evidence otherwise (e.g. a permanent "last chance" across the ad).
+- **Star ratings and testimonials:** assume real unless blatantly fabricated or paired with specific result claims ("I lost 30 lbs").
+- **Comparative claims:** "Better than X" — medium at most; needs substantiation but isn't a hard rejection.
+- **Superlatives in context:** "Our best formula", "Top-rated" — low-to-medium unless unsubstantiated "#1 in the world".
+- **Generic gift-giving framing:** "A gift for moms", "Perfect for dads" — describing the product's use case is different from addressing the viewer ("Moms, this is for you" IS a violation; "A gift for moms" is NOT).
+
 ## SCORING GUIDE
 - Start at 100
 - CRITICAL issue: -25 points each (would cause immediate rejection)
-- HIGH issue: -15 points each (likely rejection or major delivery reduction)
-- MEDIUM issue: -10 points each (may trigger manual review)
-- LOW issue: -5 points each (minor concern, may reduce quality score)
+- HIGH issue: -12 points each (likely manual review, possible rejection)
+- MEDIUM issue: -5 points each (concern worth fixing, minor delivery impact)
+- LOW issue: -2 points each (polish note, usually doesn't affect approval)
 - Minimum score: 0
-- Score 90-100 = PASS, 60-89 = NEEDS_REVIEW, 0-59 = FAIL
+- Score 85-100 = PASS, 55-84 = NEEDS_REVIEW, 0-54 = FAIL
+
+## ESTIMATED REVIEW OUTCOME — be realistic
+- **LIKELY_APPROVED** — no CRITICAL, at most 1-2 HIGH issues that are polish-fixable
+- **MANUAL_REVIEW_PROBABLE** — multiple HIGH issues OR a CRITICAL that's defensible on appeal (borderline personal attribute, restricted category with proper disclaimers)
+- **LIKELY_REJECTED** — clear CRITICAL violations with no reasonable defense (prohibited category, direct-address personal attribute, misleading UI, unauthorized special ad category)
 
 ## ANALYSIS PRINCIPLES
-1. Be thorough — examine every text element, no matter how small
-2. Be accurate — only flag genuine policy violations, not stylistic preferences
-3. Be specific — quote exact text, cite exact policies, give exact replacement copy
-4. Be practical — suggested fixes should preserve the ad's marketing intent
-5. Consider context — an ad for a medical provider saying "treating diabetes" is different from a supplement ad saying "cures diabetes"
-6. Think like Meta's reviewer — what would trigger automated rejection or manual review?
-7. When severity is ambiguous, lean toward the higher severity — it's better to over-flag than to miss a rejection trigger"""
+1. Be thorough — examine every text element, no matter how small.
+2. Be accurate — only flag genuine policy violations, not stylistic preferences or speculative concerns.
+3. Be specific — quote exact text, cite exact policies, give exact replacement copy.
+4. Be practical — suggested fixes should preserve the ad's marketing intent.
+5. Consider context — an ad for a medical provider saying "treating diabetes" is different from a supplement ad saying "cures diabetes".
+6. Think like Meta's reviewer — what would *actually* trigger rejection, not what *could theoretically* be problematic.
+7. **When severity is ambiguous, lean toward the LOWER severity.** The goal is to identify real rejection risks, not every possible concern. Over-flagging wastes reviewer time and erodes trust in the tool.
+8. **Do not flag defensively.** If you can reasonably argue either way, trust the copy as written."""
 
 
 @app.route("/api/analyze", methods=["POST"])
