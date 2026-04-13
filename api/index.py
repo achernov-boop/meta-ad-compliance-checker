@@ -3,14 +3,142 @@ import base64
 import json
 import time
 import tempfile
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, redirect, session
 import anthropic
 
 app = Flask(__name__)
 
+# Flask session cookie signing. APP_SECRET is set per-environment in Vercel.
+# Falls back to a random per-process secret if missing (sessions won't survive
+# cold starts, but app still loads for debugging).
+app.secret_key = os.environ.get("APP_SECRET", "").strip() or secrets.token_urlsafe(32)
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
 INDEX_HTML = (Path(__file__).resolve().parent / "index.html").read_text()
+
+
+def get_app_password():
+    return os.environ.get("APP_PASSWORD", "").strip()
+
+
+# Routes that bypass the auth wall: login form itself, the Vercel Blob upload
+# handler (served by Node, not Flask — included here only as a safety net),
+# and the debug endpoint for connectivity checks.
+_AUTH_EXEMPT_PATHS = {"/login", "/api/blob-upload"}
+
+
+@app.before_request
+def require_auth():
+    # If no password is configured, fail open so the app is still usable
+    # (e.g. during first deploy before env vars land).
+    if not get_app_password():
+        return None
+    if request.path in _AUTH_EXEMPT_PATHS:
+        return None
+    if session.get("authed") is True:
+        return None
+    # For XHR/API calls, return JSON 401 instead of redirecting so the
+    # frontend can show a useful error rather than redirecting mid-fetch.
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Not authenticated", "login_url": "/login"}), 401
+    return redirect("/login")
+
+
+LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — Meta Ad Compliance Checker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0a0c; color: #eeeef5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    }
+    .card {
+      background: #141418; border: 1px solid #2a2a36; border-radius: 14px;
+      padding: 36px 32px; width: 100%; max-width: 380px;
+    }
+    .logo {
+      width: 48px; height: 48px; margin: 0 auto 20px;
+      background: linear-gradient(135deg, #1877f2, #0d5bbf);
+      border-radius: 12px; display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 800; color: #fff;
+      box-shadow: 0 2px 16px rgba(24,119,242,0.3);
+    }
+    h1 { font-size: 18px; font-weight: 700; text-align: center; margin-bottom: 6px; }
+    .subtitle { font-size: 13px; color: #7e7e96; text-align: center; margin-bottom: 28px; }
+    label { display: block; font-size: 11px; font-weight: 700; color: #7e7e96;
+      text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+    input[type=password] {
+      width: 100%; padding: 12px 14px; font-size: 14px;
+      background: #1c1c22; color: #eeeef5;
+      border: 1px solid #2a2a36; border-radius: 8px; outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type=password]:focus { border-color: #1877f2; }
+    button {
+      width: 100%; margin-top: 18px; padding: 13px;
+      background: #1877f2; color: #fff; border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      transition: all 0.15s;
+    }
+    button:hover { box-shadow: 0 4px 20px rgba(24,119,242,0.25); transform: translateY(-1px); }
+    .error {
+      margin-top: 14px; padding: 10px 12px; background: rgba(255,59,92,0.1);
+      border: 1px solid rgba(255,59,92,0.3); border-radius: 8px;
+      color: #ff3b5c; font-size: 13px; text-align: center;
+    }
+    .footer { margin-top: 20px; font-size: 11px; color: #7e7e96; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">M</div>
+    <h1>Meta Ad Compliance Checker</h1>
+    <p class="subtitle">Enter the team password to continue</p>
+    <form method="POST" action="/login">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autofocus autocomplete="current-password" />
+      <button type="submit">Sign in</button>
+      {error_block}
+    </form>
+    <p class="footer">Internal tool. Access restricted.</p>
+  </div>
+</body>
+</html>
+"""
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error_block = ""
+    if request.method == "POST":
+        submitted = request.form.get("password", "")
+        if submitted and secrets.compare_digest(submitted, get_app_password()):
+            session.permanent = True
+            session["authed"] = True
+            next_url = request.args.get("next", "/")
+            # Basic open-redirect guard: only allow same-origin paths.
+            if not next_url.startswith("/") or next_url.startswith("//"):
+                next_url = "/"
+            return redirect(next_url)
+        error_block = '<div class="error">Incorrect password</div>'
+    return Response(LOGIN_HTML.replace("{error_block}", error_block), content_type="text/html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
 
 
 @app.route("/")
