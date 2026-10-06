@@ -164,13 +164,7 @@ def debug():
     sdk_test = "not tested"
     if has_key:
         try:
-            import httpx
-            http_client = httpx.Client(
-                timeout=httpx.Timeout(30.0, connect=10.0),
-                http1=True,
-                http2=False,
-            )
-            c = anthropic.Anthropic(api_key=key, http_client=http_client)
+            c = anthropic.Anthropic(api_key=key, timeout=30.0)
             r = c.messages.create(model="claude-sonnet-4-6", max_tokens=5, messages=[{"role": "user", "content": "hi"}])
             sdk_test = f"OK: {r.content[0].text}"
         except Exception as e:
@@ -558,16 +552,8 @@ def analyze():
 
     prompt = SYSTEM_PROMPT.replace("{platform_context}", PLATFORM_CONTEXT[platform])
 
-    import httpx
-    http_client = httpx.Client(
-        timeout=httpx.Timeout(120.0, connect=30.0),
-        http1=True,
-        http2=False,
-    )
-    client = anthropic.Anthropic(
-        api_key=get_api_key(),
-        http_client=http_client,
-    )
+    # The SDK's own client: newer SDKs reject a plain httpx.Client.
+    client = anthropic.Anthropic(api_key=get_api_key(), timeout=120.0)
 
     try:
         response = client.messages.create(
